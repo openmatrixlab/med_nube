@@ -12,8 +12,15 @@ CRS_EPSG = 9377
 HUELLAS_CAPA = "huellas"
 HUELLAS_SHA256 = "dc50e37f65c4fa64715b37c3e8c7129216edaa3252cb3d8cd5e984beca3b4f12"
 
+# --- convenciones -----------------------------------------------------------
+BUFFER_QUAD_SEGS = 16  # default de shapely 2; unión redonda
+
 # --- 3.1 lectura -------------------------------------------------------------
 CLASES_RUIDO = (7, 18)
+FORMATOS_SIN_RGB = (0, 1, 4, 6, 9)
+MOTIVO_SIN_CRS = "sin CRS"
+MOTIVO_SIN_RGB = "sin RGB"
+MOTIVOS_OMISION = (MOTIVO_SIN_CRS, MOTIVO_SIN_RGB)
 
 # --- 3.3 vegetación ----------------------------------------------------------
 EXG_UMBRAL = 0.10

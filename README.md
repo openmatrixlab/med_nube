@@ -11,21 +11,31 @@ Alturas y techos de las construcciones de Medellín a partir de las nubes de pun
 | Documento | Para qué |
 |---|---|
 | [`docs/contrato.md`](docs/contrato.md) | Reglas exactas del cálculo y del formato. Es normativo. |
-| [`AGENTS.md`](AGENTS.md) | Alcance, qué se puede tocar, definición de terminado. |
+| [`AGENTS.md`](AGENTS.md) | Alcance, lista blanca de archivos, definición de terminado, plantilla de entrega. |
 | [`PREGUNTAS.md`](PREGUNTAS.md) | Dudas abiertas sobre el contrato. |
+
+## Estado
+
+| Componente | Estado |
+|---|---|
+| Contrato, validador, escritor, escenario sintético y pruebas | Hechos |
+| `procesar()` | **Por implementar** (Óscar, ver `AGENTS.md`) |
+| CI · job `validador` | Siempre en verde |
+| CI · job `aceptacion` | En rojo hasta que `procesar()` esté implementado |
+| CI · job `alcance` | Corre en los PR y revisa que solo se toquen archivos permitidos |
 
 ## Uso
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                   # validador + aceptación
+pytest
 
 python -m med_nube procesar --huellas huellas.gpkg --nubes /ruta/bloques --salida salida/
 python -m med_nube validar salida/med_nube_entrega_AAAAMMDD.gpkg --huellas huellas.gpkg
 ```
 
-Prueba rápida con el recorte del Coltejer:
+Prueba rápida con el recorte del Coltejer (no vale como entrega):
 
 ```bash
 python -m med_nube validar <entrega> --huellas huellas_coltejer.gpkg --prueba
@@ -33,22 +43,28 @@ python -m med_nube validar <entrega> --huellas huellas_coltejer.gpkg --prueba
 
 ## Datos
 
-Los datos **no** van en git.
+Los datos **no** van en git. Los entrega Luis por disco o enlace de nube.
 
-- `huellas.gpkg`: SHA-256 `dc50e37f…4f12`. Lo entrega Luis. Si llega por partes:
-  ```bash
-  cat huellas.gpkg.gz.part_* | gunzip > huellas.gpkg
-  shasum -a 256 huellas.gpkg
-  ```
-- Bloques de nube: los tiene Óscar.
+| Archivo | SHA-256 |
+|---|---|
+| `huellas.gpkg` | `dc50e37f65c4fa64715b37c3e8c7129216edaa3252cb3d8cd5e984beca3b4f12` |
+| `huellas_coltejer.gpkg` | `2ca846a759ead1ea4d2bd8dac5f5875a3da7d452d4e0ef66b5d7d984b343b138` |
 
-## Estado
+- Para comprobar el hash: `shasum -a 256 huellas.gpkg`.
+- Si `huellas.gpkg` llega por partes: `cat huellas.gpkg.gz.part_* | gunzip > huellas.gpkg`.
+- Hay que trabajar sobre una copia: abrirlo en QGIS y guardar cambia el hash.
 
-- Listo: `procesar()` por implementar (ver `AGENTS.md`). El validador, el escritor y las pruebas ya están.
-- CI:
-  - el job **validador** debe estar siempre en verde;
-  - el job **aceptación** queda en rojo hasta que `procesar()` esté implementado.
+Bloques de nube: los tiene Óscar. Si un bloque tiene el CRS como "user-defined", se agrega a su lado `<bloque>.crs` con `EPSG:xxxx` (ver contrato §3.1).
+
+## Recepción (Luis)
+
+1. Revisar el PR. CI en verde, incluido `alcance`.
+2. Hacer merge a `main`.
+3. Con el código de `main`, correr `pytest` y `python -m med_nube validar <entrega> --huellas huellas.gpkg`, sin `--prueba`.
+4. Comparar el `ls -l` de la carpeta de bloques con `bloques` y `bloques_omitidos`.
+5. Revisar las advertencias: Coltejer, `h_p98` negativas, metros por piso.
+6. Pedir partes al azar si hace falta.
 
 ## Bitácora
 
-<!-- Notas de corrida: fecha, máquina, bloques, tiempos, incidencias. -->
+<!-- Notas de corrida (ver AGENTS.md): fecha, máquina, versiones, por bloque (tiempo, partes intersectadas, partes asignadas), incidencias. -->

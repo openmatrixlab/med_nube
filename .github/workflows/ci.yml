@@ -29,3 +29,35 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: pytest -q --ignore=tests/test_validar.py
+
+  alcance:
+    # Solo en PRs: los cambios deben estar en la lista blanca de AGENTS.md.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Archivos permitidos
+        run: |
+          base="origin/${{ github.base_ref }}"
+          fuera=$(git diff --name-only "$base"...HEAD | grep -vE '^(src/med_nube/procesar\.py|src/med_nube/proc_[a-z0-9_]+\.py|tests/test_proc_[a-z0-9_]+\.py|PREGUNTAS\.md|README\.md)$' || true)
+          if [ -n "$fuera" ]; then
+            echo "Archivos fuera de la lista blanca (AGENTS.md):"; echo "$fuera"; exit 1
+          fi
+      - name: README solo cambia en la Bitácora
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git show "$base":README.md | sed '/^## Bitácora/q' > /tmp/antes.md
+          sed '/^## Bitácora/q' README.md > /tmp/despues.md
+          diff -u /tmp/antes.md /tmp/despues.md
+      - name: src/ sin dependencias del escenario sintético
+        run: |
+          if grep -rnE "(from|import)[[:space:]]+tests|sinteticos|[\"']t:|A_9377|B_utm|C_sin_crs|monkeypatch" src/med_nube; then
+            echo "src/ no puede referirse a tests/ ni al escenario sintético"; exit 1
+          fi
+      - name: Pruebas propias sin monkeypatch
+        run: |
+          if ls tests/test_proc_*.py >/dev/null 2>&1 && grep -nE "monkeypatch|med_nube\.(validar|escribir|contrato)\.[a-zA-Z_]+[[:space:]]*=" tests/test_proc_*.py; then
+            echo "Las pruebas propias no pueden reemplazar módulos del contrato"; exit 1
+          fi

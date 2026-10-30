@@ -73,9 +73,13 @@ def _filas(con: sqlite3.Connection, tabla: str, columnas: list[str]) -> list[dic
 def _ids_huellas(ruta: Path) -> dict[str, int]:
     con = sqlite3.connect(f"file:{ruta}?mode=ro", uri=True)
     try:
-        return dict(con.execute(f"SELECT id_parte, pisos FROM [{C.HUELLAS_CAPA}]"))
+        filas = con.execute(f"SELECT id_parte, pisos FROM [{C.HUELLAS_CAPA}]").fetchall()
     finally:
         con.close()
+    ids = {i: (p or 0) for i, p in filas}
+    if len(ids) != len(filas):
+        raise ValueError(f"'{ruta}' tiene id_parte repetidos: no es un archivo de huellas válido")
+    return ids
 
 
 def _revisar_estructura(con: sqlite3.Connection, r: Resultado) -> bool:
@@ -153,16 +157,28 @@ def _revisar_metadatos(filas: list[dict], huellas: Path, oficial: bool, r: Resul
     except ValueError:
         r.error("bloques: debe ser una lista JSON de textos.")
         bloques = []
+    if not bloques:
+        r.error("bloques: no se procesó ningún bloque.")
     for clave in ("bloques_omitidos", "bloques_advertencias"):
         try:
             valor = json.loads(meta[clave])
             if not isinstance(valor, dict):
                 raise ValueError
-            if clave == "bloques_omitidos" and set(valor) & set(bloques):
-                r.error("Un bloque no puede estar a la vez en bloques y bloques_omitidos.")
-            r.resumen[clave] = valor
         except ValueError:
             r.error(f"{clave}: debe ser un objeto JSON.")
+            continue
+        r.resumen[clave] = valor
+        if clave == "bloques_omitidos":
+            if set(valor) & set(bloques):
+                r.error("Un bloque no puede estar a la vez en bloques y bloques_omitidos.")
+            malos = {b: m for b, m in valor.items() if m not in C.MOTIVOS_OMISION}
+            if malos:
+                r.error(
+                    f"bloques_omitidos con motivos no permitidos {malos}: "
+                    f"solo {list(C.MOTIVOS_OMISION)}; cualquier otra falla detiene la corrida."
+                )
+        elif valor:
+            r.error("bloques_advertencias debe ser {} en la versión 1.0.")
     r.resumen["bloques"] = bloques
     return bloques
 
@@ -289,7 +305,7 @@ def _resumen(alturas: dict[str, dict], techos: list[dict], ids: dict[str, int], 
     razones = [
         a["h_p98"] / ids[i]
         for i, a in alturas.items()
-        if a["h_p98"] is not None and ids.get(i, 0) > 0
+        if a["h_p98"] is not None and (ids.get(i) or 0) > 0
     ]
     formas: dict[str, int] = {}
     for t in techos:
@@ -325,7 +341,9 @@ def _revisar_coltejer(alturas: dict[str, dict], r: Resultado) -> None:
         )
         r.resumen["coltejer"] = None
         return
-    r.resumen["coltejer"] = {k: a[k] for k in ("bloque", "n_puntos", "cobertura", "h_p98")}
+    r.resumen["coltejer"] = {
+        k: a[k] for k in ("bloque", "n_puntos", "cobertura", "z_max", "z_suelo", "h_p98")
+    }
     h = a["h_p98"]
     if h is None or not (C.COLTEJER_H_P98_MIN <= h <= C.COLTEJER_H_P98_MAX):
         r.advertir(

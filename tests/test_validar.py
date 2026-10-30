@@ -138,6 +138,17 @@ def test_escritor_rechaza_columnas_extra(escenario):
         ("UPDATE metadatos SET valor = '0.9' WHERE clave = 'version_contrato'", "version"),
         ("UPDATE metadatos SET valor = 'abc' WHERE clave = 'huellas_sha256'", "huellas_sha256"),
         ("ALTER TABLE alturas ADD COLUMN extra REAL", "columnas"),
+        (
+            'UPDATE metadatos SET valor = \'{"C_sin_crs": "error de lectura"}\' '
+            "WHERE clave = 'bloques_omitidos'",
+            "motivos no permitidos",
+        ),
+        (
+            'UPDATE metadatos SET valor = \'{"A_9377": ["x"]}\' '
+            "WHERE clave = 'bloques_advertencias'",
+            "bloques_advertencias",
+        ),
+        ("UPDATE metadatos SET valor = '[]' WHERE clave = 'bloques'", "ningún bloque"),
     ],
 )
 def test_detecta_errores(escenario, sentencia, fragmento):

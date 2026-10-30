@@ -17,28 +17,43 @@ Nada más.
 
 | Insumo | Descripción |
 |---|---|
-| `huellas.gpkg` | Capa `huellas`, EPSG:9377, 976 829 polígonos (MultiPolygon). Columnas: `id_parte` (texto, único), `cbml`, `tipo`, `pisos` (entero). SHA-256 `dc50e37f65c4fa64715b37c3e8c7129216edaa3252cb3d8cd5e984beca3b4f12`. **No se modifica.** |
-| `huellas_coltejer.gpkg` | Recorte de 600 × 600 m alrededor del edificio Coltejer, para probar rápido. Misma estructura. |
-| Nubes `*.las` / `*.laz` | Bloques de dron (fotogrametría), un archivo por bloque. Pueden venir en EPSG:9377 o en otro CRS (p. ej. WGS84 / UTM 18N). |
+| `huellas.gpkg` | Capa `huellas`, EPSG:9377, 976 829 polígonos (MultiPolygon). Columnas: `id_parte` (texto, único), `cbml`, `tipo`, `pisos` (entero ≥ 0, nunca NULL). SHA-256 `dc50e37f65c4fa64715b37c3e8c7129216edaa3252cb3d8cd5e984beca3b4f12`. **No se modifica**: se trabaja sobre una copia y no se abre en QGIS, porque guardar cambia los bytes. |
+| `huellas_coltejer.gpkg` | Recorte de 600 × 600 m alrededor del edificio Coltejer (2401 partes), para probar rápido. Misma estructura. Lo entrega Luis junto con `huellas.gpkg`. |
+| Nubes `*.las` / `*.laz` | Bloques de dron (fotogrametría), un archivo por bloque, todos en una sola carpeta (no se buscan subcarpetas). Pueden venir en EPSG:9377 o en otro CRS (p. ej. WGS84 / UTM 18N). |
+
+**Garantías de `huellas.gpkg`**, ya verificadas: todas las geometrías son válidas (`shapely.is_valid`), no hay vacías, `id_parte` no se repite y `pisos` no tiene NULL. Si se encuentra algo que contradiga esto, **se para** y se escribe en `PREGUNTAS.md`.
 
 ## 3. Reglas de procesamiento
 
 Todas las distancias están en metros y en EPSG:9377.
 
+**Convenciones geométricas** (aplican a todo §3):
+
+- **Buffers**: `shapely` 2 con los parámetros por defecto: `quad_segs=16` y unión redonda.
+- **"Dentro de"**: `shapely.contains_xy(geom, x, y)`. Un punto sobre la frontera **no** cuenta. Esto vale para puntos de techo, puntos de suelo y centros de celda.
+- **Nombre de bloque**: `Path(archivo).stem` (`J14.las` → `J14`).
+  - Si dos archivos tienen el mismo stem (p. ej. `J14.las` y `J14.laz`), **se para** y se pregunta.
+  - El orden alfabético es el de Python (`sorted`, por puntos de código).
+
 ### 3.1 Lectura de cada bloque
 
-1. **CRS**:
-   - Si el LAS declara CRS distinto de EPSG:9377, transformar **solo X e Y** a EPSG:9377 con `pyproj` (`always_xy=True`). **Z no se toca.**
-   - Si el LAS no declara CRS, el bloque se **omite** y se registra en `metadatos.bloques_omitidos` con el motivo.
+1. **CRS**: se determina así, en este orden:
+   1. `crs = laspy.open(ruta).header.parse_crs()`.
+   2. Si devuelve `None` o lanza excepción, se busca el archivo `<stem>.crs` en la misma carpeta del bloque. Contiene una sola línea de texto con `EPSG:xxxx` o con un WKT, y se lee con `pyproj.CRS.from_user_input(texto)`. Esto pasa, por ejemplo, cuando el software exportó el código como "user-defined" (32767). Ese archivo lo escribe Luis u Óscar a mano, una vez por bloque, a partir del reporte de vuelo.
+   3. Si tampoco hay archivo `.crs`, el bloque se **omite** con motivo `sin CRS`.
+   4. Si el CRS es compuesto, se usa su parte horizontal: `crs.sub_crs_list[0]`.
+   5. Si `crs_h.equals(pyproj.CRS.from_epsg(9377))`, no se transforma. Si no, se transforman **solo X e Y** con `pyproj.Transformer.from_crs(crs_h, 9377, always_xy=True)`. **Z nunca se toca.**
 2. **Ruido**: se descartan los puntos con clasificación 7 u 18. Las demás clases se **ignoran**: no se usa la clasificación del archivo para nada más.
 3. **RGB**:
-   - Se normaliza a [0, 1]: se divide por 65535 si el máximo de R, G o B del bloque es mayor que 255; si no, se divide por 255.
-   - Si el bloque no tiene RGB, el filtro de vegetación (3.3) no se aplica y se registra `sin_rgb` en `metadatos.bloques_advertencias`.
+   - Si el formato de punto no tiene RGB (formatos 0, 1, 4, 6 y 9), el bloque se **omite** con motivo `sin RGB`.
+   - La normalización a [0, 1] depende del máximo de R, G y B sobre **todos los puntos del archivo**, antes de cualquier filtro (si se lee por trozos, eso exige una primera pasada). Si ese máximo es mayor que 255, se divide por 65535; si no, se divide por 255.
+4. **Únicos motivos de omisión válidos**: `sin CRS` y `sin RGB`. Cualquier otra falla al leer un bloque (archivo corrupto, falta de memoria, error de laspy) **detiene la corrida**. No se omite el bloque: se escribe en `PREGUNTAS.md`.
+5. **Todos los puntos**: no se submuestrea ni se descarta ningún punto, salvo por las reglas de este documento.
 
 ### 3.2 Asignación de bloque a cada parte
 
 - Cada parte se procesa con los puntos de **un solo bloque**: el que tenga más **puntos de techo** (3.4: dentro del área efectiva y después de los filtros 3.1 y 3.3).
-- En caso de empate, se toma el bloque cuyo nombre de archivo es menor en orden alfabético.
+- En caso de empate, se toma el bloque cuyo nombre es menor en orden alfabético.
 - No se mezclan bloques en una misma parte. Pueden tener datum vertical distinto.
 
 ### 3.3 Filtro de vegetación
@@ -64,8 +79,9 @@ Para la parte `P`:
 
 1. Se construye la zona `R`:
    - punto de partida: `P.buffer(5,0) − P.buffer(1,0)`;
-   - se le resta `unión(todas las huellas que tocan P.buffer(5,0)).buffer(0,20)`. Eso incluye a `P`.
+   - se le resta `unión(todas las huellas H con shapely.intersects(H, P.buffer(5,0))).buffer(0,20)`. Eso incluye a `P`.
 2. **Puntos de suelo**: los del bloque asignado que caen dentro de `R` y pasan los filtros 3.1 y 3.3.
+3. Es normal que muchas partes interiores o pegadas a sus vecinas no tengan suelo. En ese caso, `z_suelo` es NULL y med_texture usa los pisos del catastro. **No** se amplía el anillo ni se busca suelo de otra forma.
 
 ### 3.6 Tabla `alturas`
 
@@ -74,7 +90,7 @@ Una fila por cada parte con **al menos 20 puntos de techo**. Si tiene menos, no 
 | Columna | Tipo | Regla |
 |---|---|---|
 | `id_parte` | TEXT | Igual que en `huellas.gpkg`. Único. |
-| `bloque` | TEXT | Nombre del archivo del bloque asignado, sin ruta y sin extensión. |
+| `bloque` | TEXT | Nombre del bloque asignado (`Path.stem`). |
 | `n_puntos` | INTEGER | Puntos de techo. |
 | `cobertura` | REAL [0, 1] | Ver la definición después de la tabla. |
 | `z_p10`, `z_p50`, `z_p90`, `z_p98` | REAL | Percentiles de Z de los puntos de techo. Se calculan con `numpy.percentile` con interpolación lineal, que es el método por defecto. |
@@ -99,18 +115,20 @@ Una fila por cada parte de `alturas` con `n_puntos ≥ 50` y `cobertura ≥ 0,5`
 - **Entrada**: puntos de techo `(x, y, z)`.
   - Primero se ordenan en orden canónico: `orden = numpy.lexsort((z, y, x))`, es decir, por x, luego y, luego z. Así el resultado no depende del orden del archivo, del tamaño de los trozos de lectura ni del número de procesos.
   - Después se centran restando su media.
-- **Reproducibilidad**: `numpy.random.default_rng(42)`, con un generador nuevo por parte.
-- **Iteraciones**: 500 por plano.
-  - En cada una se eligen 3 puntos sin reemplazo y se calcula el plano que pasa por ellos.
-  - Se descartan las tríadas degeneradas: norma de la normal < 1e-9.
-- **Inliers**: puntos a distancia perpendicular ≤ 0,10 m del plano.
-- **Selección**: gana el plano con más inliers; en empate, el primero encontrado.
-  - Se reajusta por mínimos cuadrados (SVD) sobre sus inliers.
-  - Se recalculan los inliers con el plano reajustado y la misma tolerancia.
-- **Planos que se descartan**: si la **pendiente** del plano reajustado es > 70°, no cuenta como plano (es pared o ruido). Sus inliers se retiran igual y se sigue buscando.
-- **Aceptación**: un plano se acepta si sus inliers son ≥ `max(15, 10 % del total de puntos de techo)`.
-- **Parada**: se para cuando se rechaza un plano por pocos inliers, cuando quedan menos de 15 puntos, o cuando ya hay 4 planos aceptados.
-- **Orden**: los planos aceptados se ordenan por número de inliers, de mayor a menor.
+- **Reproducibilidad**: `rng = numpy.random.default_rng(42)`, un generador nuevo por parte. Los resultados solo se exigen idénticos con las mismas versiones de numpy, que se anotan en la bitácora.
+- **Definiciones**: `T` = total de puntos de techo; `mínimo = max(15, 0,10·T)`; `restantes` = índices de los puntos aún no retirados (al inicio, todos, en orden canónico).
+- **Bucle**, mientras haya menos de 4 planos aceptados y `len(restantes) ≥ 15`:
+  1. **500 iteraciones**, cada una con exactamente una llamada `rng.choice(len(restantes), 3, replace=False)`. Los índices se refieren a `restantes`.
+     - Plano por los 3 puntos: normal `n = (b − a) × (c − a)`. Si `‖n‖ < 1e-9`, la tríada es degenerada: la iteración se consume y no hay candidato.
+     - Inliers del candidato: puntos de `restantes` a distancia perpendicular ≤ 0,10 m.
+     - Gana el candidato con más inliers. En empate, el primero, con comparación estricta `>`.
+     - Si las 500 iteraciones fueron degeneradas, el bucle **termina**.
+  2. **Reajuste**: con los inliers del ganador, se calcula el centroide `c0`. Normal = última fila de `Vt`, con `numpy.linalg.svd(inliers − c0, full_matrices=False)`. Si `nz < 0`, se invierte.
+  3. Se **recalculan los inliers** sobre `restantes`, con distancia `|(p − c0)·n| ≤ 0,10`.
+  4. Si son menos que `mínimo`, el bucle **termina**.
+  5. Si la pendiente es > 70°, no es plano (es pared o ruido): sus inliers se retiran de `restantes` y se vuelve al paso 1. Esto no cuenta para el tope de 4.
+  6. En los demás casos, el plano se **acepta** y sus inliers se retiran de `restantes`.
+- **Orden final**: los planos aceptados se ordenan por número de inliers, de mayor a menor, con orden estable (en empate, el que se aceptó primero).
 
 **Magnitudes de cada plano**, con normal unitaria `n = (nx, ny, nz)` y `nz ≥ 0` (si `nz < 0`, se invierte):
 
@@ -156,8 +174,8 @@ Dos columnas TEXT: `clave` y `valor`. Claves obligatorias, ni más ni menos:
 | `commit` | Hash del commit de med_nube con que se generó. |
 | `huellas_sha256` | SHA-256 del `huellas.gpkg` usado. |
 | `bloques` | JSON: lista de nombres de bloque procesados, ordenada. |
-| `bloques_omitidos` | JSON: objeto `{bloque: motivo}`, o `{}` si no hay. |
-| `bloques_advertencias` | JSON: objeto `{bloque: [advertencias]}`, o `{}` si no hay. |
+| `bloques_omitidos` | JSON: objeto `{bloque: motivo}`, con motivo `sin CRS` o `sin RGB`; o `{}` si no hay. |
+| `bloques_advertencias` | JSON: siempre `{}` en la versión 1.0. Queda reservado. |
 
 ## 4. Formato de entrega
 
@@ -177,4 +195,17 @@ Dos columnas TEXT: `clave` y `valor`. Claves obligatorias, ni más ni menos:
    - Si algún bloque lo cubre, debe estar en `alturas`. Se espera `h_p98` entre 120 y 190 m.
    - Si el valor sale fuera de ese rango, el validador muestra una advertencia `REVISAR`. **No se ajustan parámetros para corregirlo**: se reporta en el mensaje de entrega con sus valores, y Luis decide.
    - Si ningún bloque lo cubre, se dice explícitamente en el mensaje de entrega.
-4. **Todos los bloques**: la entrega usa **todos** los bloques disponibles. Cada uno aparece en `bloques` o en `bloques_omitidos`.
+4. **Todos los bloques**: la entrega usa **todos** los bloques de la carpeta. Cada uno aparece en `bloques` o en `bloques_omitidos`. El mensaje de entrega incluye el listado de la carpeta (`ls -l`) para que Luis lo compare.
+5. **Recepción**: Luis corre él mismo `pytest` y el validador, con el código de `main` y el `huellas.gpkg` oficial. El reporte que manda Óscar es informativo.
+6. **Revisión por muestreo**: Óscar conserva los archivos intermedios hasta que Luis apruebe la entrega. Luis puede pedir el detalle de partes al azar (puntos de techo y suelo).
+
+## 6. Notas para el consumidor (med_texture)
+
+No son obligaciones de Óscar; se dejan aquí para que el consumidor no las olvide.
+
+- **Usar solo `h_*`**, nunca comparar `z_*` entre bloques: el datum vertical puede variar entre bloques.
+- **Sin suelo**: si `h_*` es NULL, se usa la altura por pisos (`pisos × 2,8`).
+- **Ladera**: en pendiente, el p25 del anillo sesga `h` hacia arriba, del orden de 1–2 m.
+- **Forma `otro` con `pendiente_deg < 5`**: se modela como plano. Son terrazas con cuartos útiles.
+- **Alero de `dos_aguas`**: se deriva como `h_p98 − (ancho perpendicular a la cumbrera / 2) · tan(pendiente)`.
+- **Techos verdes**: un techo con `ExG > 0,10` (zinc verde, pasto sintético) desaparece de las tablas. Es aceptado.
