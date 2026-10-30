@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  validador:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: pytest -q tests/test_validar.py
+
+  aceptacion:
+    # En rojo hasta que procesar() esté implementado (docs/contrato.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q --ignore=tests/test_validar.py

@@ -1,0 +1,19 @@
+# datos: nunca en git
+*.las
+*.laz
+*.gpkg
+*.gpkg-*
+*.tif
+*.tiff
+*.zip
+*.gz
+*.7z
+*.part_*
+data/
+salida/
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
