@@ -23,7 +23,7 @@ Eso es todo. No hay segunda fase en este repo.
 ## Definición de terminado
 
 - [ ] CI en verde en el PR: los jobs `validador`, `aceptacion` y `alcance`.
-- [ ] `python -m med_nube validar <entrega> --huellas huellas.gpkg` imprime `RESULTADO: APROBADA`:
+- [ ] `python -m med_nube validar <entrega> --huellas insumos/huellas.gpkg` imprime `RESULTADO: APROBADA`:
   - sobre la corrida completa;
   - con el `huellas.gpkg` oficial;
   - **sin** `--prueba`.

@@ -31,14 +31,14 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 
-python -m med_nube procesar --huellas huellas.gpkg --nubes /ruta/bloques --salida salida/
-python -m med_nube validar salida/med_nube_entrega_AAAAMMDD.gpkg --huellas huellas.gpkg
+python -m med_nube procesar --huellas insumos/huellas.gpkg --nubes /ruta/bloques --salida salida/
+python -m med_nube validar salida/med_nube_entrega_AAAAMMDD.gpkg --huellas insumos/huellas.gpkg
 ```
 
 Prueba rápida con el recorte del Coltejer (no vale como entrega):
 
 ```bash
-python -m med_nube validar <entrega> --huellas huellas_coltejer.gpkg --prueba
+python -m med_nube validar <entrega> --huellas insumos/huellas_coltejer.gpkg --prueba
 ```
 
 ## Datos
@@ -61,7 +61,7 @@ bash insumos/armar_huellas.sh   # crea insumos/huellas.gpkg y verifica los SHA-2
 
 1. Revisar el PR. CI en verde, incluido `alcance`.
 2. Hacer merge a `main`.
-3. Con el código de `main`, correr `pytest` y `python -m med_nube validar <entrega> --huellas huellas.gpkg`, sin `--prueba`.
+3. Con el código de `main`, correr `pytest` y `python -m med_nube validar <entrega> --huellas insumos/huellas.gpkg`, sin `--prueba`.
 4. Comparar el `ls -l` de la carpeta de bloques con `bloques` y `bloques_omitidos`.
 5. Revisar las advertencias: Coltejer, `h_p98` negativas, metros por piso.
 6. Pedir partes al azar si hace falta.
