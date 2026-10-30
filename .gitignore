@@ -17,3 +17,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+
+# insumos oficiales versionados (excepción a las reglas de arriba)
+!insumos/huellas.gpkg.gz.part_*
+!insumos/huellas_coltejer.gpkg

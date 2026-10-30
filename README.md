@@ -43,18 +43,19 @@ python -m med_nube validar <entrega> --huellas huellas_coltejer.gpkg --prueba
 
 ## Datos
 
-Los datos **no** van en git. Los entrega Luis por disco o enlace de nube.
+Las huellas vienen **en el repo**, en `insumos/`, comprimidas y partidas porque GitHub no admite archivos de más de 100 MB. Para armarlas:
+
+```bash
+bash insumos/armar_huellas.sh   # crea insumos/huellas.gpkg y verifica los SHA-256
+```
 
 | Archivo | SHA-256 |
 |---|---|
-| `huellas.gpkg` | `dc50e37f65c4fa64715b37c3e8c7129216edaa3252cb3d8cd5e984beca3b4f12` |
-| `huellas_coltejer.gpkg` | `2ca846a759ead1ea4d2bd8dac5f5875a3da7d452d4e0ef66b5d7d984b343b138` |
+| `insumos/huellas.gpkg` | `dc50e37f65c4fa64715b37c3e8c7129216edaa3252cb3d8cd5e984beca3b4f12` |
+| `insumos/huellas_coltejer.gpkg` | `2ca846a759ead1ea4d2bd8dac5f5875a3da7d452d4e0ef66b5d7d984b343b138` |
 
-- Para comprobar el hash: `shasum -a 256 huellas.gpkg`.
-- Si `huellas.gpkg` llega por partes: `cat huellas.gpkg.gz.part_* | gunzip > huellas.gpkg`.
-- Hay que trabajar sobre una copia: abrirlo en QGIS y guardar cambia el hash.
-
-Bloques de nube: los tiene Óscar. Si un bloque tiene el CRS como "user-defined", se agrega a su lado `<bloque>.crs` con `EPSG:xxxx` (ver contrato §3.1).
+- Las huellas no se modifican. Abrirlas en QGIS y guardar cambia el hash.
+- Las nubes de puntos **no** van en git: las tiene Óscar. Si un bloque tiene el CRS como "user-defined", se agrega a su lado `<bloque>.crs` con `EPSG:xxxx` (ver contrato §3.1).
 
 ## Recepción (Luis)
 

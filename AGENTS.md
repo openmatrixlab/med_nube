@@ -40,7 +40,7 @@ Eso es todo. No hay segunda fase en este repo.
 
 **Todo lo demás está prohibido**, y el job `alcance` de CI lo verifica en cada PR. Eso incluye, entre otros:
 
-- `docs/`, `AGENTS.md`, `.github/`, `.gitignore`;
+- `docs/`, `insumos/`, `AGENTS.md`, `.github/`, `.gitignore`;
 - `pyproject.toml` **completo**: dependencias, configuración de pytest y de ruff;
 - cualquier `conftest.py` o `__init__.py`;
 - `contrato.py`, `validar.py`, `escribir.py`, `__main__.py`;
@@ -77,7 +77,9 @@ Que no se haga, aunque parezca buena idea:
 
 ## Cómo trabajar
 
-1. **Óscar prepara el entorno** antes de lanzar el agente: `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"`. `lazrs` necesita su wheel. Hay que usar `-e`, porque `commit_actual()` necesita el repo de git.
+1. **Óscar prepara el entorno** antes de lanzar el agente:
+   - `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"`. `lazrs` necesita su wheel. Hay que usar `-e`, porque `commit_actual()` necesita el repo de git.
+   - `bash insumos/armar_huellas.sh`, que deja `insumos/huellas.gpkg` verificado.
 2. **Leer el contrato:** `docs/contrato.md` completo, y `src/med_nube/contrato.py`.
 3. **Implementar:**
    - Escribir `procesar()` hasta que `pytest` pase completo.

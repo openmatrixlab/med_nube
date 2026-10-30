@@ -18,7 +18,7 @@ Nada más.
 | Insumo | Descripción |
 |---|---|
 | `huellas.gpkg` | Capa `huellas`, EPSG:9377, 976 829 polígonos (MultiPolygon). Columnas: `id_parte` (texto, único), `cbml`, `tipo`, `pisos` (entero ≥ 0, nunca NULL). SHA-256 `dc50e37f65c4fa64715b37c3e8c7129216edaa3252cb3d8cd5e984beca3b4f12`. **No se modifica**: se trabaja sobre una copia y no se abre en QGIS, porque guardar cambia los bytes. |
-| `huellas_coltejer.gpkg` | Recorte de 600 × 600 m alrededor del edificio Coltejer (2401 partes), para probar rápido. Misma estructura. Lo entrega Luis junto con `huellas.gpkg`. |
+| `huellas_coltejer.gpkg` | Recorte de 600 × 600 m alrededor del edificio Coltejer (2401 partes), para probar rápido. Misma estructura. Ambos están en `insumos/` del repo (ver README › Datos). |
 | Nubes `*.las` / `*.laz` | Bloques de dron (fotogrametría), un archivo por bloque, todos en una sola carpeta (no se buscan subcarpetas). Pueden venir en EPSG:9377 o en otro CRS (p. ej. WGS84 / UTM 18N). |
 
 **Garantías de `huellas.gpkg`**, ya verificadas: todas las geometrías son válidas (`shapely.is_valid`), no hay vacías, `id_parte` no se repite y `pisos` no tiene NULL. Si se encuentra algo que contradiga esto, **se para** y se escribe en `PREGUNTAS.md`.
