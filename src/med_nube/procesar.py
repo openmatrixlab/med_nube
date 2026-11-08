@@ -33,7 +33,10 @@ Implementación
 5. Una sola llamada a ``escribir_entrega``.
 
 Rendimiento (no cambia el resultado): variables de entorno ``MED_NUBE_PUNTOS_POR_TROZO``
-(puntos por lectura, 5 000 000 por defecto) y ``MED_NUBE_PROCESOS`` (0 = automático).
+(puntos por lectura, 5 000 000 por defecto), ``MED_NUBE_PROCESOS`` (0 = automático) y
+``MED_NUBE_MEMORIA_GB`` (memoria para los procesos de bloque; 0 = la disponible al empezar
+la fase de bloques, menos un margen). Cada bloque reserva una estimación de su memoria según
+el número de puntos de su cabecera, y solo se lanzan a la vez los que caben.
 """
 
 from __future__ import annotations
@@ -69,7 +72,12 @@ FORMATO_CACHE = 1
 PARTES_POR_TAREA_GEOMETRIA = 1000
 PUNTOS_POR_TAREA_PARTES = 2_000_000
 PARTES_MAX_POR_TAREA = 500
-GB_POR_PROCESO_DE_BLOQUE = 8
+# Memoria estimada de un proceso de bloque: base + bytes por punto de la cabecera. Es una
+# cota superior medida en el peor caso urbano (ningún punto filtrado y el 86 % de los
+# puntos dentro de algún A o R): 92-99 bytes por punto con 5, 20 y 40 millones de puntos.
+GB_BASE_POR_BLOQUE = 1.0
+BYTES_POR_PUNTO_DE_BLOQUE = 100
+GB_MARGEN_MEMORIA = 4.0
 
 
 @dataclass(frozen=True)
@@ -78,12 +86,14 @@ class Opciones:
 
     puntos_por_trozo: int = 5_000_000
     procesos: int = 0  # 0 = automático
+    memoria_gb: float = 0.0  # 0 = automático (memoria disponible menos un margen)
 
     @classmethod
     def del_entorno(cls) -> Opciones:
         return cls(
             puntos_por_trozo=int(os.environ.get("MED_NUBE_PUNTOS_POR_TROZO", 5_000_000)),
             procesos=int(os.environ.get("MED_NUBE_PROCESOS", 0)),
+            memoria_gb=float(os.environ.get("MED_NUBE_MEMORIA_GB", 0)),
         )
 
 
@@ -99,7 +109,8 @@ def procesar(
 # ======================================================================================
 # Utilidades
 # ======================================================================================
-def _memoria_total_gb() -> float:
+def _estado_memoria_gb() -> tuple[float, float]:
+    """(total, disponible) de memoria física en GB; (0, 0) si no se puede saber."""
     try:
         if os.name == "nt":
             import ctypes
@@ -120,41 +131,99 @@ def _memoria_total_gb() -> float:
             e = _Estado()
             e.dwLength = ctypes.sizeof(_Estado)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(e))
-            return e.ullTotalPhys / 1024**3
-        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024**3
+            return e.ullTotalPhys / 1024**3, e.ullAvailPhys / 1024**3
+        pagina = os.sysconf("SC_PAGE_SIZE")
+        return (
+            pagina * os.sysconf("SC_PHYS_PAGES") / 1024**3,
+            pagina * os.sysconf("SC_AVPHYS_PAGES") / 1024**3,
+        )
     except Exception:
-        return 0.0
+        return 0.0, 0.0
 
 
-def _procesos(opciones: Opciones, por_memoria: bool = False) -> int:
+def _memoria_total_gb() -> float:
+    return _estado_memoria_gb()[0]
+
+
+def _procesos(opciones: Opciones) -> int:
     if opciones.procesos > 0:
         return opciones.procesos
     cpus = os.cpu_count() or 1
-    n = max(1, min(cpus - 1, 32))
-    if por_memoria:
-        gb = _memoria_total_gb()
-        n = min(n, max(1, int(gb // GB_POR_PROCESO_DE_BLOQUE))) if gb else min(n, 2)
-    return n
+    return max(1, min(cpus - 1, 32))
 
 
-def _en_paralelo(funcion: Callable, tareas: Iterable, procesos: int) -> list:
-    """Resultados en el orden de las tareas. Con 1 proceso, todo corre aquí mismo. Las
-    tareas se envían de a pocas para no tener todas en memoria a la vez."""
+def _memoria_bloque_gb(info) -> float:
+    """Memoria estimada para leer y asignar un bloque (cota superior)."""
+    return GB_BASE_POR_BLOQUE + BYTES_POR_PUNTO_DE_BLOQUE * info.n_puntos / 1024**3
+
+
+def _capacidad_bloques_gb(opciones: Opciones) -> float | None:
+    """Memoria para los procesos de bloque que corren a la vez. None si no se puede saber
+    (entonces se limita a 2 procesos)."""
+    if opciones.memoria_gb > 0:
+        return opciones.memoria_gb
+    _, disponible = _estado_memoria_gb()
+    if disponible <= 0:
+        return None
+    return max(2.0, disponible - GB_MARGEN_MEMORIA)
+
+
+def _en_paralelo(
+    funcion: Callable,
+    tareas: Iterable,
+    procesos: int,
+    pesos: Sequence[float] | None = None,
+    capacidad: float | None = None,
+    etiqueta: str | None = None,
+) -> list:
+    """Resultados en el orden de las tareas. Con 1 proceso, todo corre aquí mismo.
+
+    Sin ``capacidad``, las tareas se envían en orden y de a pocas (2 por proceso) para no
+    tener todas en memoria a la vez. Con ``capacidad``, cada tarea ocupa su ``peso`` (GB
+    estimados) mientras corre y solo se lanza si cabe en lo que queda libre; si la siguiente
+    no cabe, se prueba con las que vienen después. Siempre corre al menos una. El reparto no
+    cambia ningún resultado: cada tarea es independiente y su resultado va en su lugar.
+    Con ``etiqueta``, se informa el avance cada minuto.
+    """
     tareas = list(tareas) if not isinstance(tareas, list) else tareas
     if procesos <= 1 or len(tareas) <= 1:
         return [funcion(t) for t in tareas]
+    pesos = [0.0] * len(tareas) if pesos is None else [float(p) for p in pesos]
+    tope = procesos if capacidad is not None else 2 * procesos
     resultados: list = [None] * len(tareas)
     with ProcessPoolExecutor(max_workers=min(procesos, len(tareas))) as pool:
         pendientes: dict = {}
-        siguiente = 0
-        while siguiente < len(tareas) or pendientes:
-            while siguiente < len(tareas) and len(pendientes) < 2 * procesos:
-                pendientes[pool.submit(funcion, tareas[siguiente])] = siguiente
-                tareas[siguiente] = None  # liberar la tarea ya enviada
-                siguiente += 1
+        por_enviar = list(range(len(tareas)))
+        en_uso = 0.0
+        hechas_total, t_aviso = 0, time.perf_counter()
+        while por_enviar or pendientes:
+            j = 0
+            while j < len(por_enviar) and len(pendientes) < tope:
+                i = por_enviar[j]
+                if capacidad is None or not pendientes or en_uso + pesos[i] <= capacidad:
+                    pendientes[pool.submit(funcion, tareas[i])] = i
+                    tareas[i] = None  # liberar la tarea ya enviada
+                    en_uso += pesos[i]
+                    por_enviar.pop(j)
+                elif capacidad is None:
+                    break
+                else:
+                    j += 1
             hechas, _ = wait(pendientes, return_when=FIRST_COMPLETED)
             for fut in hechas:
-                resultados[pendientes.pop(fut)] = fut.result()
+                i = pendientes.pop(fut)
+                en_uso -= pesos[i]
+                resultados[i] = fut.result()
+            hechas_total += len(hechas)
+            if etiqueta and time.perf_counter() - t_aviso >= 60:
+                t_aviso = time.perf_counter()
+                log.info(
+                    "%s: %d de %d tareas (%.0f %%)",
+                    etiqueta,
+                    hechas_total,
+                    len(tareas),
+                    100 * hechas_total / len(tareas),
+                )
     return resultados
 
 
@@ -252,6 +321,7 @@ def ejecutar(
         areas_y_anillos,
         _tareas_geometria(arbol, geoms, pisos, candidatas) if len(candidatas) else [],
         _procesos(opciones),
+        etiqueta="Geometrías",
     ):
         for g, a, r in lote:
             if a is not None:
@@ -291,8 +361,22 @@ def ejecutar(
                 "r_wkb": [r_wkb[int(g)] for g in partes],
             }
         )
+    procesos_bloque = _procesos(opciones)
+    pesos = [_memoria_bloque_gb(tb["info"]) for tb in tareas_bloque]
+    capacidad = _capacidad_bloques_gb(opciones)
+    if capacidad is None:
+        procesos_bloque = min(procesos_bloque, 2)
+    tiempos["memoria_bloques_gb"] = round(capacidad, 1) if capacidad is not None else None
+    log.info(
+        "Bloques: hasta %d procesos, %s GB de memoria para bloques; el mayor estima %.1f GB",
+        procesos_bloque,
+        f"{capacidad:.1f}" if capacidad is not None else "?",
+        max(pesos, default=0.0),
+    )
     resultados = {}
-    for res in _en_paralelo(procesar_bloque, tareas_bloque, _procesos(opciones, True)):
+    for res in _en_paralelo(
+        procesar_bloque, tareas_bloque, procesos_bloque, pesos=pesos, capacidad=capacidad
+    ):
         resultados[res["nombre"]] = res
         e = res["estad"]
         log.info(
@@ -328,6 +412,12 @@ def ejecutar(
                 grupo, puntos = [], 0
         if grupo:
             tareas_partes.append((nombre, grupo))
+    log.info(
+        "Partes: %d con al menos %d puntos de techo, en %d tareas",
+        sum(len(g) for _, g in tareas_partes),
+        C.MIN_PUNTOS_TECHO,
+        len(tareas_partes),
+    )
     filas_a, filas_t = [], []
     for alt, tec in _en_paralelo(
         calcular_partes,
@@ -342,6 +432,7 @@ def ejecutar(
             for nombre, grupo in tareas_partes
         ],
         _procesos(opciones),
+        etiqueta="Partes",
     ):
         filas_a.extend(alt)
         filas_t.extend(tec)
