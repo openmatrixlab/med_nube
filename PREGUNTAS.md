@@ -24,13 +24,15 @@ Formato: una entrada por duda. No se elige opción por cuenta propia: se sigue c
 - **Elegida provisionalmente:** A (`# P2` en `src/med_nube/proc_lectura.py`).
 - **Respuesta (Luis):** …
 
-## P3 · §2 y §5.4 — Conjunto de bloques para la entrega
-- **Duda:** la carpeta preparada tiene 36 bloques (26,7 GB, 969 millones de puntos). Antes de la corrida completa conviene confirmar que es el conjunto previsto, porque:
-  - `AGENTS.md` describe bloques típicos de ~9 GB y ~270 millones de puntos; aquí el mayor tiene 3,4 GB y 99 millones.
-  - Ningún bloque cubre el Coltejer: el más cercano (Villatina) está a ~2,6 km (§5.3).
-  - Tres vuelos solo traen ráster, sin `.las`: Emergencia Altos de Oriente, Las Flores y La Balastrera (2025-06-25/26).
-  - Hay vuelos repetidos sobre la misma zona: Santa Rita (seis entre mayo y septiembre), Los Balsos (dos), Bello Oriente / Las Flores (dos), además de vuelos de emergencia y monitoreo.
-- **Opciones:** A) Correr con los 36 bloques tal como están; cada parte toma el bloque con más puntos de techo (§3.2). B) Otro conjunto (añadir bloques que falten o retirar vuelos repetidos).
-- **Impacto si no se resuelve:** define qué partes salen en la entrega y de qué vuelo; no cambia el código.
+## P3 · §2, §3.2 y §5.4 — Conjunto de bloques para la entrega
+- **Duda:** la carpeta de bloques tiene ahora 90 bloques (259,2 GB; 8 332 millones de puntos) de dos campañas: 17 teselas de 2022 (`2022_*`, de 3,7 a 14,1 GB, como el bloque típico de `AGENTS.md`) y 73 vuelos de dron de 2025 (`D_2025_*` y uno más), entre ellos los 36 del 1 de noviembre. Conviene confirmar que es el conjunto previsto, porque:
+  - Las campañas se mezclan: donde se solapan, cada parte toma el bloque con más puntos de techo (§3.2), sin importar la fecha. En la corrida del 9 de noviembre, 126 937 partes salen de 2022 y 49 643 de 2025; 7 432 partes de la entrega del 1 de noviembre pasan de un vuelo de 2025 a una tesela de 2022.
+  - La cobertura no es total: 176 580 de 976 829 huellas (18 %) tienen alturas.
+  - El Coltejer sigue sin cubrir: queda dentro de la caja de `2022_10_09_I23_I24` (56 km², mucho mayor que las demás teselas), pero ninguno de sus puntos cae en su huella ni en su anillo; los más cercanos registrados están a unos 80 m (§5.3).
+  - Los comprimidos de los vuelos de 2021 traen solo ortomosaicos, sin nube de puntos; uno (`imagen1_D_2021_03_12_0713_2.7z`) trae dentro otro `.zip` que no se abrió. Siguen sin nube los tres vuelos de 2025 ya citados (Emergencia Altos de Oriente, Las Flores y La Balastrera) e `imagen2241_D_2025_02_10_7004.7z`.
+  - Siguen los vuelos repetidos sobre la misma zona (Santa Rita, Los Balsos, Bello Oriente / Las Flores), además de vuelos de emergencia y monitoreo.
+- **Opciones:** A) Mantener los 90 bloques; §3.2 decide por puntos de techo. B) Dar prioridad a una campaña (por ejemplo, la más reciente); exigiría una regla nueva en el contrato. C) Otro conjunto de bloques (retirar o añadir).
+- **Impacto si no se resuelve:** define qué partes salen en la entrega y de qué campaña; no cambia el código.
 - **Elegida provisionalmente:** A.
+- **Antecedente:** el 1 de noviembre la carpeta tenía 36 bloques (26,7 GB, 969 millones de puntos), sin bloques de ~9 GB y sin el Coltejer; también se eligió A provisionalmente.
 - **Respuesta (Luis):** …
