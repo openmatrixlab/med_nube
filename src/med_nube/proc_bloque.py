@@ -156,8 +156,11 @@ def procesar_bloque(tarea: dict) -> dict:
 
 
 def _tramo(partes_ordenadas: np.ndarray, parte: int) -> slice:
-    lo = int(np.searchsorted(partes_ordenadas, parte, side="left"))
-    hi = int(np.searchsorted(partes_ordenadas, parte, side="right"))
+    # La clave va con el mismo tipo del arreglo: si no, NumPy convierte el arreglo entero
+    # (cientos de millones de pares en un bloque grande) a int64 en cada búsqueda.
+    clave = partes_ordenadas.dtype.type(parte)
+    lo = int(np.searchsorted(partes_ordenadas, clave, side="left"))
+    hi = int(np.searchsorted(partes_ordenadas, clave, side="right"))
     return slice(lo, hi)
 
 

@@ -375,7 +375,12 @@ def ejecutar(
     )
     resultados = {}
     for res in _en_paralelo(
-        procesar_bloque, tareas_bloque, procesos_bloque, pesos=pesos, capacidad=capacidad
+        procesar_bloque,
+        tareas_bloque,
+        procesos_bloque,
+        pesos=pesos,
+        capacidad=capacidad,
+        etiqueta="Bloques",
     ):
         resultados[res["nombre"]] = res
         e = res["estad"]
